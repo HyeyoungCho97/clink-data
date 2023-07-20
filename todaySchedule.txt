@@ -1,0 +1,3 @@
+{'timestamp': '2023-07-20 09:30:15', 'description': '스타벅스', 'amount': 4500, 'category': '음식점'}
+{'timestamp': '2023-07-20 12:15:30', 'description': '맥도날드', 'amount': 10900, 'category': '음식점'}
+{'timestamp': '2023-07-20 15:45:20', 'description': 'ABC마트', 'amount': 35000, 'category': '식료품'}

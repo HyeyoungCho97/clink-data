@@ -74,7 +74,7 @@ def putInDB(payment):
 
     ##데이터 삽입
     sql = "INSERT INTO Account_History (transaction_datetime, account_no, bank_code, user_no, transaction_amount, transaction_info_content, transaction_code,register_datetime,register_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
-    cursor.execute(sql, (datetime.strptime(payment["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", payment["amount"], payment["description"], category_list[payment["category"]], now(), "01010"))
+    cursor.execute(sql, (datetime.strptime(payment["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", payment["amount"], payment["description"], category_list[payment["category"]], datetime.now(), "01010"))
     db.commit()
     db.close()
 
@@ -140,19 +140,31 @@ def getTodaysPayment():
 
 # 메인 함수: 현재시간 확인해서 함수 호출
 def main():
-    
-    #정각에 aws 호출, 당일 결제내역(payment)을 받아옴
-    global payment_list
-    payment_list = getTodaysPayment()
-    payment_list = sorted(payment_list, key=lambda k:k['timestamp'])
+    cnt=0
+    while cnt<1:
+        try: 
+            #정각에 aws 호출, 당일 결제내역(payment)을 받아옴
+            global payment_list
+            payment_list = getTodaysPayment()
+            payment_list = sorted(payment_list, key=lambda k:k['timestamp'])
+            file = open('todaySchedule.txt', 'w')
+            #스케줄러에 등록
+            for p in payment_list:
+                print(p)
+                if p["category"] not in category_list: 
+                    raise Exception('카테고리 오류')
+                file.write(str(p)+'\n');
+                getTime = datetime.strptime(p["timestamp"], '%Y-%m-%d %H:%M:%S')
+                hour = "0"+str(getTime.hour) if (len(str(getTime.hour))==1)  else str(getTime.hour)
+                minute = "0"+str(getTime.minute) if (len(str(getTime.minute))==1)  else str(getTime.minute)
+                strTime = hour+":"+minute
+                print(strTime)
+                schedule.every().day.at(strTime).do(putInDB, p)
+            file.close();
+            cnt+=1
 
-    #스케줄러에 등록
-    for p in payment_list:
-        print(p)
-        getTime = datetime.strptime(p["timestamp"], '%Y-%m-%d %H:%M:%S')
-        strTime = str(getTime.hour)+":"+str(getTime.minute)
-        print(strTime)
-        schedule.every().day.at(strTime).do(putInDB(p))
+        except Exception as e:
+            print(e)
 
     while True:
         # 정해진 결제내역을 모두 입력한 경우 해제
