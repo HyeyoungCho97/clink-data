@@ -1,14 +1,27 @@
-from datetime import datetime
-import time
+import pymysql
 import requests
 import json
-import pymysql
-import schedule
+from datetime import datetime, timedelta
+import time
 import mysql_auth
 
-#gpt 통신을 위한 key
+# DB 연결
+info = mysql_auth.info
+db = pymysql.connect(   
+                        host=info["host"],
+                        user=info["user"],
+                        passwd=info["passwd"],
+                        port=info["port"],
+                        db=info["db"],
+                        charset=info["charset"]
+                    )
+cursor = db.cursor()
+
+### 데이터 생성
+
 file = open('openAI_key.txt', 'r')
 key = file.read()
+
 
 #데이터1 인물의 페르소나
 persona = {
@@ -58,41 +71,24 @@ category_list = {"식료품": "001",
                  "현금서비스": "008", 
                  "기타":"009"}
 
-# db에 저장
-def putInDB(payment):
-    # DB 연결
-    info = mysql_auth.info
-    db = pymysql.connect(   
-                        host=info["host"],
-                        user=info["user"],
-                        passwd=info["passwd"],
-                        port=info["port"],
-                        db=info["db"],
-                        charset=info["charset"]
-                        )
-    cursor = db.cursor()
+url = "https://api.openai.com/v1/chat/completions"
 
-    ##데이터 삽입
-    sql = "INSERT INTO Account_History (transaction_datetime, account_no, bank_code, user_no, transaction_amount, transaction_info_content, transaction_code,register_datetime,register_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
-    cursor.execute(sql, (datetime.strptime(payment["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", payment["amount"], payment["description"], category_list[payment["category"]], datetime.now(), "01010"))
-    db.commit()
-    db.close()
+day_cnt= 0
+today = datetime.now()
+continuity = True 
+#에러처리
+while continuity:
+    #오늘-1일 부터 1년치 데이터 입력
 
-    #데이터 삭제
-    payment_list.pop(0)
+    if(day_cnt==365): 
+        continuity=False
+    try:
+        #1분에 3번 요청제한 있어서...
+        time.sleep(20)
 
-
-
-# gpt를 통해 당일 결제될 내역을 받아옴
-def getTodaysPayment():
-    url = "https://api.openai.com/v1/chat/completions"
-    
-    #오늘 날짜 
-    today = datetime.now()
-    str_today = str(today.year)+"년 "+str(today.month)+"월 "+str(today.day)+"일"
-    
-    # 대화 형식의 메시지 생성
-    messages = [
+        curr_date = today-timedelta(days=day_cnt)
+        curr_date_string = str(curr_date.year)+"년 "+str(curr_date.month)+"월 "+str(curr_date.day)+"일"
+        messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "assistant", "content": json.dumps(persona)},
             {"role": "assistant", "content": json.dumps(payment_data)},
@@ -108,72 +104,41 @@ def getTodaysPayment():
             {"role": "assistant", "content": "카테고리의 전자상거래는 온라인쇼핑, 인터넷서비스, 게임에서 구매한 내역이야"},
             {"role": "assistant", "content": "카테고리의 현금서비스는 ATM, 현금인출을 한 내역이야"},
             {"role": "assistant", "content": "카테고리의 기타는 약국, 병원, 미용실, 세탁소, 편의점에서 구매한 내역이야"},
-            {"role": "user", "content": "주어진 페르소나랑 결제내역을 기반으로 "+str_today+"의 새로운 결제내역을 생성해줘. 주어진 결제내역이랑 같은 JSON 형식으로, 카테고리는 주어진 카테고리들 중에 하나로 만들어줘."}
+            {"role": "user", "content": "주어진 페르소나랑 결제내역을 기반으로 "+curr_date_string+"의 새로운 결제내역을 생성해줘. 주어진 결제내역이랑 같은 JSON 형식으로!"}
         ]
-    #요청 헤더
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {key}"
-    }
 
-    #요청 데이터
-    data = {
-        "model": "gpt-3.5-turbo",
-        "messages": messages,
-        "temperature": 1  # 다양성을 조절하는 temperature 값 설정
-    }
+        #요청 헤더
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}"
+        }
 
-    cnt=0
-    while cnt<1:
-        try:
-            response = requests.post(url, headers=headers, json=data)
-            content = response.json()["choices"][0]["message"]["content"]
-            cnt += 1
+        data = {
+            "model": "gpt-3.5-turbo",
+            "messages": messages,
+            "temperature": 1  # 다양성을 조절하는 temperature 값 설정
+        }
 
-            return eval(content)["transactions"]
-        
-        except Exception as e:
-            print(e)
+        #질의
+        response = requests.post(url, headers=headers, json=data)
+        print(day_cnt)
+        print(response.json())
+        content = response.json()["choices"][0]["message"]["content"]
 
-    
-
-
-# 메인 함수: 현재시간 확인해서 함수 호출
-def main():
-    cnt=0
-    while cnt<1:
-        try: 
-            #정각에 aws 호출, 당일 결제내역(payment)을 받아옴
-            global payment_list
-            payment_list = getTodaysPayment()
-            payment_list = sorted(payment_list, key=lambda k:k['timestamp'])
-            file = open('todaySchedule.txt', 'w')
-            #스케줄러에 등록
-            for p in payment_list:
-                print(p)
-                if p["category"] not in category_list: 
+        ##데이터 삽입
+        sql = "INSERT INTO Account_History (transaction_datetime, account_no, bank_code, user_no, transaction_amount, transaction_info_content, transaction_code,register_datetime,register_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        transaction = eval(content)["transactions"]
+        for i in transaction:   
+            print(i)
+            if i["category"] not in category_list: 
                     raise Exception('카테고리 오류')
-                file.write(str(p)+'\n')
-                getTime = datetime.strptime(p["timestamp"], '%Y-%m-%d %H:%M:%S')
-                hour = "0"+str(getTime.hour) if (len(str(getTime.hour))==1)  else str(getTime.hour)
-                minute = "0"+str(getTime.minute) if (len(str(getTime.minute))==1)  else str(getTime.minute)
-                strTime = hour+":"+minute
-                print(strTime)
-                schedule.every().day.at(strTime).do(putInDB, p)
-            file.close()
-            cnt+=1
+            cursor.execute(sql, (datetime.strptime(i["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", i["amount"], i["description"], category_list[i["category"]], datetime.now(), "01010"))
 
-        except Exception as e:
-            print(e)
+        day_cnt +=1 
+        db.commit()
+        
+    except Exception as e:
+        print(e)
 
-    while True:
-        # 정해진 결제내역을 모두 입력한 경우 해제
-        if len(payment_list)==0 : 
-            break
 
-        schedule.run_pending()
-        time.sleep(60)
-
-# 프로그램 실행
-if __name__ == '__main__':
-    main()
+db.close()
