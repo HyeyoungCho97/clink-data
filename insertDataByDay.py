@@ -73,8 +73,8 @@ def putInDB(payment):
     cursor = db.cursor()
 
     ##데이터 삽입
-    sql = "INSERT INTO Account_History (transaction_datetime, account_no, bank_code, user_no, transaction_amount, transaction_info_content, transaction_code,register_datetime,register_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
-    cursor.execute(sql, (datetime.strptime(payment["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", payment["amount"], payment["description"], category_list[payment["category"]], datetime.now(), "01010"))
+    sql = "INSERT INTO Account_History (transaction_datetime, account_no, bank_code, user_no, transaction_amount, transaction_info_content, transaction_code,register_datetime,register_id, history_delete_yn) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+    cursor.execute(sql, (datetime.strptime(payment["timestamp"], '%Y-%m-%d %H:%M:%S'), "372-01-214931", "026", "00000", payment["amount"], payment["description"], category_list[payment["category"]], datetime.now(), "01010", "n"))
     db.commit()
     db.close()
 
